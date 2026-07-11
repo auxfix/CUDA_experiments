@@ -1,192 +1,111 @@
-# ✨ CUDA learning plan: vector addition
+# ✨ CUDA learning plan: image processing
 
-## 🌈 Your first parallel programming adventure
-This is a great first CUDA project because it teaches the core workflow without becoming overwhelming.
+## 🌈 Make the GPU do visual work
+This is a fun project because it turns CUDA into something visual and easy to understand.
 
-> Think of it as your first “hello world” for parallel programming.
+> You will learn how to process many pixels at the same time.
 
 ### 🧭 Quick mission
-Build a program that adds two vectors element-by-element:
-- Input: two arrays of numbers
-- Output: one array containing the sums
-- Compare a CPU version with a GPU version
+Build a program that applies a simple image filter, such as grayscale or blur, using the GPU.
 
 ### 🏁 What success looks like
-- You understand the host/device workflow
-- You launch a simple CUDA kernel
-- You verify the result against a CPU version
-- You can explain what the threads are doing
+- You can map image pixels to GPU threads
+- You understand how to process large arrays of pixels in parallel
+- You see a visible result from your CUDA program
 
 ---
 
-## 1. 🧠 Start with the CPU version
-Before writing any CUDA code, build the simple CPU version first.
+## 1. 🧠 Start with a simple image operation
+Choose a filter that is easy to reason about.
 
-✅ Goal: create a reliable reference result.
-
-### What to do
-- Create two arrays
-- Fill them with values
-- Loop through them and compute the sum
-- Store the result in a third array
+### Good beginner options
+- grayscale
+- brightness adjustment
+- simple blur
 
 ### Why this helps
-- It gives you a correct baseline
-- It makes it easier to confirm the GPU result later
+The operation is local to each pixel, which makes it a natural CUDA task.
 
 ---
 
-## 2. 🔄 Learn the basic CUDA workflow
-Understand the standard pattern for almost every CUDA program:
+## 2. 🧪 Build a CPU reference version
+Before using CUDA, create a CPU implementation.
 
-🔷 Host → Device → Host
+### What to do
+- Load or generate an image
+- Process each pixel in a loop
+- Write the result to a new image
 
-1. Allocate memory on the host
-2. Allocate memory on the device
-3. Copy data from host to device
-4. Launch a kernel
-5. Copy the result back to host
-6. Free memory
+---
+
+## 3. 🧵 Think in terms of pixels
+A natural mapping is:
+- One thread processes one pixel
 
 ### Key idea
-CUDA programs usually follow this host-device handshake.
+Each pixel can be transformed independently, which is perfect for parallelism.
 
 ---
 
-## 3. 🧵 Think in terms of threads
-For vector addition, each thread can compute one element.
-
-💡 Each thread is a tiny worker.
-
-- One thread = one output element
-- The thread index maps to the array index
-
-### Mental model
-Instead of thinking in a single loop, think in terms of many workers running in parallel.
-
----
-
-## 4. ⚙️ Design the GPU kernel conceptually
-Imagine the kernel as a small function that each thread will execute.
-
-🛠️ Each thread should:
-- Read one element from vector A
-- Read one element from vector B
-- Compute the sum
-- Write the result into the output vector
-
+## 4. ⚙️ Design the kernel conceptually
 Each thread should:
-- Read one element from vector A
-- Read one element from vector B
-- Compute the sum
-- Write the result into the output vector
+- Identify the pixel position
+- Read the pixel value
+- Apply the filter rule
+- Write the new value back
 
 ### Big idea
-The kernel runs many times in parallel, and each thread handles one position.
+You are turning image processing into many small independent operations.
 
 ---
 
-## 5. 🧩 Choose the launch configuration
-You will need to decide:
-- How many threads per block
-- How many blocks
+## 5. 🧩 Think about image layout
+This project teaches you how data layout affects performance.
 
-🌟 A simple beginner setup is often enough to get started.
-
-### Beginner-friendly approach
-Use enough total threads to cover all vector elements.
-
-### Hint
-The total number of threads should be at least the number of elements in the vectors.
+### Important hints
+- Images are often stored as flat arrays
+- Pixel channels matter for color images
+- Memory access patterns can strongly affect speed
 
 ---
 
 ## 6. ✅ Verify correctness
-After running the GPU version, compare it with the CPU result.
-
-🔍 If the outputs match, you are on the right track.
+Compare the CPU and GPU outputs visually and numerically.
 
 ### Check
-- Do the outputs match?
-- If not, inspect indexing and memory transfer logic
-
-### Good habit
-Always verify correctness before trying to optimize.
+- Do the images look similar?
+- Are the pixel values consistent?
 
 ---
 
 ## 7. ⏱️ Measure performance
-Once the result is correct, compare:
-- CPU execution time
-- GPU execution time
-
-⚡ This is where you begin to see the real power of GPU computing.
+Once the result is correct, compare CPU and GPU runtime.
 
 ### Why this matters
-This is where CUDA becomes exciting: the GPU can be much faster for large workloads.
+Image processing is a great example of a workload that benefits from many parallel workers.
 
 ---
 
-## 8. 🧠 Learn the memory story
-Pay attention to the difference between:
-- Host memory
-- Device memory
-
-📦 Data movement matters almost as much as the computation itself.
-
-### Important idea
-Moving data between the CPU and GPU costs time, so it matters a lot.
-
-### Hint
-A GPU becomes much more useful when it does a lot of work after a single transfer.
-
----
-
-## 9. 📌 Learning checkpoints
-As you build, make sure you understand these ideas:
-- kernel launch syntax
-- thread index
-- grid and block structure
-- device memory allocation
-- host-to-device transfers
-- device-to-host transfers
-- error checking
-
-⭐ These are the building blocks of almost every CUDA project.
-
----
-
-## 10. 🗺️ Suggested learning order
-1. Write the CPU reference version
-2. Set up the CUDA memory flow
-3. Create a simple kernel for one element per thread
-4. Compare results with the CPU
-5. Add timing measurements
-6. Try larger arrays and observe the effect
-
-🪜 This progression keeps the project beginner-friendly and rewarding.
+## 8. 🌟 Stretch ideas
+When you are comfortable, try:
+- box blur
+- edge detection
+- sepia filter
+- color channel manipulation
 
 ---
 
 ## 💡 Helpful hints while you write it manually
-- Keep the first version very small and simple
-- Start with an array like 8 or 16 elements
-- Print the results to confirm behavior
-- Begin with one block and enough threads for the array size
-- Do not worry about optimization yet
-- Focus on correctness first
-
-✨ Small steps will teach you a lot more than trying to make it perfect immediately.
+- Start with grayscale for simplicity
+- Use a small image first
+- Print or visualize the result early
+- Keep the kernel logic focused on one pixel at a time
 
 ---
 
 ## 🎓 What you will learn from this project
-By the end, you will have touched the core CUDA ideas:
-- launching kernels
-- thinking in parallel
-- using thread indexing
-- moving data between CPU and GPU
-- verifying results
-- measuring performance
-
-🌟 This project is simple, but it gives you the language and mindset for bigger CUDA work later.
+You will strengthen your understanding of:
+- parallel pixel processing
+- thread-to-data mapping
+- memory access patterns
+- visual debugging
