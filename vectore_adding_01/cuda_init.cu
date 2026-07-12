@@ -1,134 +1,96 @@
+// vector_add.cu --------------------------------------------------------------
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 #include <cuda_runtime.h>
 
-__global__ void vectorAdd(const float* a, const float* b, float* c, int n)
+// ---------------------------------------------------------------
+// Simple error‑check macro (prints and exits on failure)
+#define CUDA_CHECK(call)                                            \
+    do {                                                            \
+        cudaError_t err = (call);                                   \
+        if (err != cudaSuccess) {                                   \
+            fprintf(stderr, "%s failed: %s\n", #call,               \
+                    cudaGetErrorString(err));                       \
+            exit(EXIT_FAILURE);                                     \
+        }                                                           \
+    } while (0)
+
+// ---------------------------------------------------------------
+// Kernel: each thread adds one element of a and b into c
+__global__ void vectorAdd(const float* a, const float* b,
+                          float* c, float* res, int n)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        c[idx] = a[idx] + b[idx];
-    }
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // global thread id
+    if (i < n) res[i] = a[i] + b[i] + c[i];
 }
 
+// ---------------------------------------------------------------
 int main()
 {
-    int deviceCount = 0;
-    cudaError_t err = cudaGetDeviceCount(&deviceCount);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "Failed to get CUDA device count: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
-
-    std::printf("CUDA devices found: %d\n", deviceCount);
-    if (deviceCount == 0) {
-        std::printf("No CUDA devices available.\n");
-        return EXIT_SUCCESS;
-    }
-
+    // 1️⃣ Choose device 0 (first GPU) and print its name
+    CUDA_CHECK(cudaSetDevice(0));
     cudaDeviceProp prop;
-    err = cudaGetDeviceProperties(&prop, 0);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "Failed to get device properties: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
+    printf("Running on %s (CC %d.%d)\n", prop.name, prop.major, prop.minor);
 
-    std::printf("Using device 0: %s\n", prop.name);
-    std::printf("  Compute capability: %d.%d\n", prop.major, prop.minor);
-    std::printf("  Total global memory: %zu MB\n", prop.totalGlobalMem / (1024 * 1024));
-
+    // 2️⃣ Problem size
     const int N = 1024;
-    size_t size = N * sizeof(float);
+    const size_t bytes = N * sizeof(float);
 
-    float *h_a = (float*)malloc(size);
-    float *h_b = (float*)malloc(size);
-    float *h_c = (float*)malloc(size);
-    if (!h_a || !h_b || !h_c) {
-        std::fprintf(stderr, "Failed to allocate host memory\n");
-        return EXIT_FAILURE;
-    }
-
+    // 3️⃣ Host vectors (managed by std::vector → auto‑free)
+    std::vector<float> h_a(N), h_b(N), h_c(N), h_res(N);
     for (int i = 0; i < N; ++i) {
-        h_a[i] = static_cast<float>(i);
-        h_b[i] = static_cast<float>(i * 2);
+        h_a[i] = static_cast<float>(i);       // 0,1,2,...
+        h_b[i] = static_cast<float>(i * 2);   // 0,2,4,...
+        h_c[i] = static_cast<float>(i * 3);   // 0,3,6,...
     }
 
-    float *d_a = nullptr;
-    float *d_b = nullptr;
-    float *d_c = nullptr;
+    // 4️⃣ Allocate device memory
+    float *d_a, *d_b, *d_c, *d_res;
+    CUDA_CHECK(cudaMalloc(&d_a, bytes));
+    CUDA_CHECK(cudaMalloc(&d_b, bytes));
+    CUDA_CHECK(cudaMalloc(&d_c, bytes));
+    CUDA_CHECK(cudaMalloc(&d_res, bytes));
 
-    err = cudaMalloc(&d_a, size);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaMalloc failed for d_a: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
-    err = cudaMalloc(&d_b, size);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaMalloc failed for d_b: %s\n", cudaGetErrorString(err));
-        cudaFree(d_a);
-        return EXIT_FAILURE;
-    }
-    err = cudaMalloc(&d_c, size);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaMalloc failed for d_c: %s\n", cudaGetErrorString(err));
-        cudaFree(d_a);
-        cudaFree(d_b);
-        return EXIT_FAILURE;
-    }
+    // 5️⃣ Copy inputs from host → device
+    CUDA_CHECK(cudaMemcpy(d_a, h_a.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_b, h_b.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_c, h_c.data(), bytes, cudaMemcpyHostToDevice));
 
-    err = cudaMemcpy(d_a, h_a, size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaMemcpy failed for d_a: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
-    err = cudaMemcpy(d_b, h_b, size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaMemcpy failed for d_b: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
+    // 6️⃣ Launch kernel (256 threads per block is a common choice)
+    const int TPB = 256;
+    const int BPG = (N + TPB - 1) / TPB;          // ceil(N/TPB)
+    vectorAdd<<<BPG, TPB>>>(d_a, d_b, d_c, d_res, N);
+    CUDA_CHECK(cudaGetLastError());               // catch launch errors
+    CUDA_CHECK(cudaDeviceSynchronize());          // wait for kernel
 
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
-    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_a, d_b, d_c, N);
+    // 7️⃣ Copy result back to host
+    CUDA_CHECK(cudaMemcpy(h_res.data(), d_res, bytes, cudaMemcpyDeviceToHost));
 
-    err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
-
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaDeviceSynchronize failed: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
-
-    err = cudaMemcpy(h_c, d_c, size, cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess) {
-        std::fprintf(stderr, "cudaMemcpy failed for d_c: %s\n", cudaGetErrorString(err));
-        return EXIT_FAILURE;
-    }
-
-    bool success = true;
+    // 8️⃣ Verify (use a tolerance for floating‑point compare)
+    const float eps = 1e-5f;
+    bool ok = true;
     for (int i = 0; i < N; ++i) {
-        float expected = h_a[i] + h_b[i];
-        if (h_c[i] != expected) {
-            std::fprintf(stderr, "Result mismatch at index %d: host %f device %f\n", i, expected, h_c[i]);
-            success = false;
+        float expected = h_a[i] + h_b[i] + h_c[i];
+        if (fabsf(h_res[i] - expected) > eps) {
+            fprintf(stderr, "Mismatch @%d: %f vs %f\n", i, h_res[i], expected);
+            ok = false;
             break;
         }
     }
 
-    if (success) {
-        std::printf("Vector add completed successfully.\n");
-        std::printf("Sample output: c[0]=%f c[1]=%f c[2]=%f\n", h_c[0], h_c[1], h_c[2]);
+    if (ok) {
+        printf("Success! Sample: c[0]=%f c[1]=%f c[2]=%f\n",
+               h_res[0], h_res[1], h_res[2]);
     }
 
+    // 9️⃣ Clean up device memory (host vectors free automatically)
     cudaFree(d_a);
     cudaFree(d_b);
     cudaFree(d_c);
-    free(h_a);
-    free(h_b);
-    free(h_c);
+    cudaFree(d_res);
+    cudaDeviceReset();   // optional, helps profiling tools
 
-    return success ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
