@@ -147,8 +147,8 @@ int main()
         }
     }
 
-    std::cout << "GPU Multiplication Time: " << gpuMUltiplicationTime / 1000 << " sec" << std::endl;
-    std::cout << "CPU Multiplication Time: " << cpuMultiplicationTime / 1000 << " sec" << std::endl;
+    std::cout << "GPU Multiplication Time: " << gpuMUltiplicationTime << " ms" << std::endl;
+    std::cout << "CPU Multiplication Time: " << cpuMultiplicationTime << " ms" << std::endl;
 
     if (areEqual) {
         std::cout << "Results are equal." << std::endl;
