@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <vector>
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 #include <iostream>
 #include <chrono>
 
@@ -14,6 +15,15 @@
         if (err != cudaSuccess) {                                   \
             fprintf(stderr, "%s failed: %s\n", #call,               \
                     cudaGetErrorString(err));                       \
+            exit(EXIT_FAILURE);                                     \
+        }                                                           \
+    } while (0)
+
+#define CUBLAS_CHECK(call)                                          \
+    do {                                                            \
+        cublasStatus_t status = (call);                             \
+        if (status != CUBLAS_STATUS_SUCCESS) {                       \
+            fprintf(stderr, "%s failed: %d\n", #call, status);    \
             exit(EXIT_FAILURE);                                     \
         }                                                           \
     } while (0)
@@ -97,6 +107,48 @@ void multiplyMatricesOnGPU(const std::vector<std::vector<float>>& A, const std::
     delete[] h_A;
     delete[] h_B;
     delete[] h_C;
+}
+
+void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::vector<std::vector<float>>& B, std::vector<std::vector<float>>& C, int N) {
+    const size_t bytes = static_cast<size_t>(N) * N * sizeof(float);
+
+    float* d_A = nullptr;
+    float* d_B = nullptr;
+    float* d_C = nullptr;
+    CUDA_CHECK(cudaMalloc(&d_A, bytes));
+    CUDA_CHECK(cudaMalloc(&d_B, bytes));
+    CUDA_CHECK(cudaMalloc(&d_C, bytes));
+
+    CUDA_CHECK(cudaMemcpy(d_A, A.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, B.data(), bytes, cudaMemcpyHostToDevice));
+
+    cublasHandle_t handle{};
+    CUBLAS_CHECK(cublasCreate(&handle));
+
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+    CUBLAS_CHECK(cublasSgemm(
+        handle,
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        N,
+        N,
+        N,
+        &alpha,
+        d_A,
+        N,
+        d_B,
+        N,
+        &beta,
+        d_C,
+        N));
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(C.data(), d_C, bytes, cudaMemcpyDeviceToHost));
+    CUBLAS_CHECK(cublasDestroy(handle));
+    CUDA_CHECK(cudaFree(d_A));
+    CUDA_CHECK(cudaFree(d_B));
+    CUDA_CHECK(cudaFree(d_C));
 }
 
 // ---------------------------------------------------------------
