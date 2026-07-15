@@ -167,7 +167,7 @@ void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::v
 int main()
 {
     // Define matrix size and allocate host memory
-    const int N = 256; // Size of the matrices (N x N)
+    const int N = 4000; // Size of the matrices (N x N)
     std::vector<std::vector<float>> matrixA(N, std::vector<float>(N));
     std::vector<std::vector<float>> matrixB(N, std::vector<float>(N));
     std::vector<std::vector<float>> cpuMatrixSumResult(N, std::vector<float>(N));
@@ -223,8 +223,12 @@ int main()
         }
     }
 
+    int cpuMultiplicationTimeInSeconds = cpuMultiplicationTime / 1000;
+    int cpuTimeMin = cpuMultiplicationTimeInSeconds / 60;
+    int cpuTimeSec = cpuMultiplicationTimeInSeconds % 60;
+
     std::cout << "GPU Multiplication Time: " << gpuMUltiplicationTime << " ms" << std::endl;
-    std::cout << "CPU Multiplication Time: " << cpuMultiplicationTime << " ms" << std::endl;
+    std::cout << "CPU Multiplication Time: " << cpuTimeMin << " min " << cpuTimeSec << " sec" << std::endl;
     std::cout << "Tensor Multiplication Time: " << tensorMultiplicationTime << " ms" << std::endl;
 
     if (areEqual) {
