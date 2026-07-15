@@ -1,7 +1,7 @@
 CUDA_HOME ?= /usr/local/cuda-13.3
 NVCC := $(if $(wildcard $(CUDA_HOME)/bin/nvcc),$(CUDA_HOME)/bin/nvcc,/usr/bin/nvcc)
 TARGET := matrix_multiplication_tensor_cores
-SRC := matrix_multiplication_tensor_cores.cu
+SRC := matrix_multipication.cu
 
 all: $(TARGET)
 

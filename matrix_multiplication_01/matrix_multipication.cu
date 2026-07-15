@@ -6,6 +6,7 @@
 #include <cublas_v2.h>
 #include <iostream>
 #include <chrono>
+#include <cmath>
 
 // ---------------------------------------------------------------
 // Simple error‑check macro (prints and exits on failure)
@@ -51,66 +52,26 @@ __global__ void matrixMultiplyKernel(const float* A, const float* B, float* C, i
     if (row < N && col < N) {
         float sum = 0.0f;
         for (int k = 0; k < N; ++k) {
-            sum += A[row * N + k] * B[k * N + col];
+            sum += A[row + k * N] * B[k + col * N];
         }
-        C[row * N + col] = sum;
+        C[row + col * N] = sum;
     }
 }
 
 void multiplyMatricesOnGPU(const std::vector<std::vector<float>>& A, const std::vector<std::vector<float>>& B, std::vector<std::vector<float>>& C, int N)
 {
-    // Allocate device memory
-    float* d_A, * d_B, * d_C;
-    size_t bytes = N * N * sizeof(float);
-
-    CUDA_CHECK(cudaMalloc(&d_A, bytes));
-    CUDA_CHECK(cudaMalloc(&d_B, bytes));
-    CUDA_CHECK(cudaMalloc(&d_C, bytes));
-
-    // Copy data to device
-    float* h_A = new float[N * N];
-    float* h_B = new float[N * N];
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
-            h_A[i * N + j] = A[i][j];
-            h_B[i * N + j] = B[i][j];
-        }
-    }
-
-    CUDA_CHECK(cudaMemcpy(d_A, h_A, bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_B, h_B, bytes, cudaMemcpyHostToDevice));
-
-    // Setup grid and block dimensions
-    dim3 blockSize(16, 16);
-    dim3 gridSize((N + blockSize.x - 1) / blockSize.x, (N + blockSize.y - 1) / blockSize.y);
-
-    // Launch kernel
-    matrixMultiplyKernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, N);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    // Copy result back to host
-    float* h_C = new float[N * N];
-    CUDA_CHECK(cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost));
-
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
-            C[i][j] = h_C[i * N + j];
-        }
-    }
-
-    // Free device memory
-    CUDA_CHECK(cudaFree(d_A));
-    CUDA_CHECK(cudaFree(d_B));
-    CUDA_CHECK(cudaFree(d_C));
-
-    delete[] h_A;
-    delete[] h_B;
-    delete[] h_C;
-}
-
-void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::vector<std::vector<float>>& B, std::vector<std::vector<float>>& C, int N) {
     const size_t bytes = static_cast<size_t>(N) * N * sizeof(float);
+
+    std::vector<float> h_A(N * N);
+    std::vector<float> h_B(N * N);
+    std::vector<float> h_C(N * N);
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            h_A[i + j * N] = A[i][j];
+            h_B[i + j * N] = B[i][j];
+        }
+    }
 
     float* d_A = nullptr;
     float* d_B = nullptr;
@@ -119,8 +80,52 @@ void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::v
     CUDA_CHECK(cudaMalloc(&d_B, bytes));
     CUDA_CHECK(cudaMalloc(&d_C, bytes));
 
-    CUDA_CHECK(cudaMemcpy(d_A, A.data(), bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_B, B.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_A, h_A.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, h_B.data(), bytes, cudaMemcpyHostToDevice));
+
+    dim3 blockSize(16, 16);
+    dim3 gridSize((N + blockSize.x - 1) / blockSize.x, (N + blockSize.y - 1) / blockSize.y);
+
+    matrixMultiplyKernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, N);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, bytes, cudaMemcpyDeviceToHost));
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            C[i][j] = h_C[i + j * N];
+        }
+    }
+
+    CUDA_CHECK(cudaFree(d_A));
+    CUDA_CHECK(cudaFree(d_B));
+    CUDA_CHECK(cudaFree(d_C));
+}
+
+void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::vector<std::vector<float>>& B, std::vector<std::vector<float>>& C, int N) {
+    const size_t bytes = static_cast<size_t>(N) * N * sizeof(float);
+
+    std::vector<float> h_A(N * N);
+    std::vector<float> h_B(N * N);
+    std::vector<float> h_C(N * N);
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            h_A[i + j * N] = A[i][j];
+            h_B[i + j * N] = B[i][j];
+        }
+    }
+
+    float* d_A = nullptr;
+    float* d_B = nullptr;
+    float* d_C = nullptr;
+    CUDA_CHECK(cudaMalloc(&d_A, bytes));
+    CUDA_CHECK(cudaMalloc(&d_B, bytes));
+    CUDA_CHECK(cudaMalloc(&d_C, bytes));
+
+    CUDA_CHECK(cudaMemcpy(d_A, h_A.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, h_B.data(), bytes, cudaMemcpyHostToDevice));
 
     cublasHandle_t handle{};
     CUBLAS_CHECK(cublasCreate(&handle));
@@ -144,7 +149,14 @@ void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::v
         N));
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    CUDA_CHECK(cudaMemcpy(C.data(), d_C, bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, bytes, cudaMemcpyDeviceToHost));
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            C[i][j] = h_C[i + j * N];
+        }
+    }
+
     CUBLAS_CHECK(cublasDestroy(handle));
     CUDA_CHECK(cudaFree(d_A));
     CUDA_CHECK(cudaFree(d_B));
@@ -155,11 +167,12 @@ void tensorMultiplication(const std::vector<std::vector<float>>& A, const std::v
 int main()
 {
     // Define matrix size and allocate host memory
-    const int N = 2000; // Size of the matrices (N x N)
+    const int N = 256; // Size of the matrices (N x N)
     std::vector<std::vector<float>> matrixA(N, std::vector<float>(N));
     std::vector<std::vector<float>> matrixB(N, std::vector<float>(N));
     std::vector<std::vector<float>> cpuMatrixSumResult(N, std::vector<float>(N));
     std::vector<std::vector<float>> gpuMatrixSumResult(N, std::vector<float>(N));
+    std::vector<std::vector<float>> tensorMatrixSumResult(N, std::vector<float>(N));
 
     
      // Initialize matrices with random values
@@ -172,24 +185,35 @@ int main()
 
     int gpuMUltiplicationTime = 0;
     int cpuMultiplicationTime = 0;
+    int tensorMultiplicationTime = 0;
     bool areEqual = true;
+    const float tolerance = 1e-4f;
 
     // Multiply matrices on CPU
     auto cpuStartTime = std::chrono::high_resolution_clock::now();
-    multiplyMatricesOnGPU(matrixA, matrixB, cpuMatrixSumResult, N);
+    multiplyMatricesOnCPU(matrixA, matrixB, cpuMatrixSumResult, N);
     auto cpuEndTime = std::chrono::high_resolution_clock::now();
     cpuMultiplicationTime = std::chrono::duration_cast<std::chrono::milliseconds>(cpuEndTime - cpuStartTime).count();
 
     // Multiply matrices on GPU
     auto gpuStartTime = std::chrono::high_resolution_clock::now();
-    multiplyMatricesOnCPU(matrixA, matrixB, gpuMatrixSumResult, N);
+    multiplyMatricesOnGPU(matrixA, matrixB, gpuMatrixSumResult, N);
     auto gpuEndTime = std::chrono::high_resolution_clock::now();
     gpuMUltiplicationTime = std::chrono::duration_cast<std::chrono::milliseconds>(gpuEndTime - gpuStartTime).count();
+    
+    // Multiply using Tensor Cores (cuBLAS)
+    auto tensorStartTime = std::chrono::high_resolution_clock::now();
+    tensorMultiplication(matrixA, matrixB, tensorMatrixSumResult, N);
+    auto tensorEndTime = std::chrono::high_resolution_clock::now();
+    tensorMultiplicationTime = std::chrono::duration_cast<std::chrono::milliseconds>(tensorEndTime - tensorStartTime).count();
 
     // Compare results
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
-            if (cpuMatrixSumResult[i][j] != gpuMatrixSumResult[i][j]) {
+            if (std::fabs(cpuMatrixSumResult[i][j] - gpuMatrixSumResult[i][j]) > tolerance) {
+                areEqual = false;
+                break;
+            } else if (std::fabs(cpuMatrixSumResult[i][j] - tensorMatrixSumResult[i][j]) > tolerance) {
                 areEqual = false;
                 break;
             }
@@ -201,6 +225,7 @@ int main()
 
     std::cout << "GPU Multiplication Time: " << gpuMUltiplicationTime << " ms" << std::endl;
     std::cout << "CPU Multiplication Time: " << cpuMultiplicationTime << " ms" << std::endl;
+    std::cout << "Tensor Multiplication Time: " << tensorMultiplicationTime << " ms" << std::endl;
 
     if (areEqual) {
         std::cout << "Results are equal." << std::endl;
