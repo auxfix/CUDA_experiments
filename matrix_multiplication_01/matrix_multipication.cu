@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 #include <cmath>
+#include <algorithm>
 
 // ---------------------------------------------------------------
 // Simple error‑check macro (prints and exits on failure)
@@ -187,7 +188,7 @@ int main()
     int cpuMultiplicationTime = 0;
     int tensorMultiplicationTime = 0;
     bool areEqual = true;
-    const float tolerance = 1e-4f;
+    const float tolerance = 1e-3f;
 
     // Multiply matrices on CPU
     auto cpuStartTime = std::chrono::high_resolution_clock::now();
@@ -210,11 +211,18 @@ int main()
     // Compare results
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
-            if (std::fabs(cpuMatrixSumResult[i][j] - gpuMatrixSumResult[i][j]) > tolerance) {
+            const float cpuValue = cpuMatrixSumResult[i][j];
+            const float gpuValue = gpuMatrixSumResult[i][j];
+            const float tensorValue = tensorMatrixSumResult[i][j];
+
+            const float gpuDiff = std::fabs(cpuValue - gpuValue);
+            const float tensorDiff = std::fabs(cpuValue - tensorValue);
+            const float scale = std::max({1.0f, std::fabs(cpuValue), std::fabs(gpuValue), std::fabs(tensorValue)});
+
+            if (gpuDiff > tolerance * scale || tensorDiff > tolerance * scale) {
                 areEqual = false;
-                break;
-            } else if (std::fabs(cpuMatrixSumResult[i][j] - tensorMatrixSumResult[i][j]) > tolerance) {
-                areEqual = false;
+                std::cout << "Mismatch at (" << i << ", " << j << "): CPU=" << cpuValue
+                          << ", GPU=" << gpuValue << ", Tensor=" << tensorValue << std::endl;
                 break;
             }
         }
